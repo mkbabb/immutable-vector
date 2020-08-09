@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "immutable-vector"
 version = "0.1.0"
-description = ""
+description = "Functional, immutable data structures in Python 🐍"
 authors = ["Mike Babb <mike7400@gmail.com>"]
 
 [tool.poetry.dependencies]

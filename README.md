@@ -6,6 +6,25 @@ _persistent_, data structures, namely: an immutable [`vector`](src/vector.py).
 Based off of the wonderful work by Rich Hickey (`Clojure`'s Vector) and Phil Bagwell
 ([`Bagwell, Phil. (2001). Ideal Hash Trees.`](https://pdfs.semanticscholar.org/4fc2/40d0d9e690cb9b0bcb2f8a5e5ca918b01410.pdf))
 
+## Quick Start
+
+If using poetry (_preferred method_), you can simply:
+
+    poetry install
+
+to install the dependencies.
+
+Or if you're using pip:
+
+    pip install -r requirements.txt
+
+Then, just `import` like so
+
+```python
+from immutable_vector import Vector
+...
+```
+
 ## Features
 
 #### ⌨️ Typing
