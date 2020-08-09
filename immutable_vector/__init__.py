@@ -1,1 +1,2 @@
-from vector import *
+from .vector import *
+from .utils import *

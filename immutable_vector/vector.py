@@ -2,9 +2,9 @@ import contextlib
 import math
 from typing import *
 
-import typing_extensions
+from typing_extensions import *
 
-from utils import is_power_of
+from .utils import is_power_of
 
 T = TypeVar("T")
 S = TypeVar("S")
@@ -23,21 +23,24 @@ WIDTH = 1 << BITS
 MASK = WIDTH - 1
 
 
+NodeType = List[Union[Optional[T], "Node[T]"]]
+
+
 class Node(Generic[T]):
-    def __init__(self, children: Optional[list] = None):
+    def __init__(self, children: Optional[NodeType[T]] = None):
         if children is not None:
             self.children = children + [None] * (WIDTH - len(children))
         else:
             self.children = [None] * WIDTH
 
-    def copy(self) -> "Node":
+    def copy(self):
         return Node(list(self.children))
 
 
-class Vector:
+class Vector(Sequence[Optional[T]]):
     def __init__(self, vals: List[T]):
         self.root: Node[T] = Node()
-        self.size = 0
+        self.length = 0
         self.mutation = False
         self.leaf: Optional[Node[T]] = None
 
@@ -46,20 +49,38 @@ class Vector:
             self.append(val)
         self.mutate()
 
+    def __len__(self) -> int:
+        return self.length
+
+    @overload
+    def __getitem__(self, key: int) -> T:
+        pass
+
+    @overload
+    def __getitem__(self, key: slice) -> "Vector[T]":
+        pass
+
+    def __getitem__(self, key: Union[int, slice]) -> Union[T, "Vector[T]"]:
+        if isinstance(key, slice):
+            start, stop, step = key.indices(len(self))
+            return Vector([self[i] for i in range(start, stop, step)])
+        elif isinstance(key, int):
+            key = key + self.length if key < 0 else key
+            if key > self.length - 1:
+                raise IndexError
+            else:
+                return self._at(key)
+        else:
+            raise TypeError(f"Invalid argument type: {type(key)}")
+
     @staticmethod
-    def __create(root: Node[T], size: int) -> "Vector":
-        out = Vector([])
+    def _create(root: Node[T], length: int) -> "Vector":
+        out: "Vector" = Vector([])
         out.root = root
-        out.size = size
+        out.length = length
         return out
 
-    def depth(self) -> int:
-        return 0 if self.size == 0 else math.floor(math.log(self.size, WIDTH))
-
-    def mutate(self) -> None:
-        self.mutation = not self.mutation
-
-    def reduce_node(
+    def _reduce_node(
         self,
         key: int,
         reducer: Callable[[S, int, int], S],
@@ -83,13 +104,15 @@ class Vector:
         """
         depth = self.depth() if depth is None else depth
 
+        acc = init
+
         for level in range(depth, 0, -1):
             ix = (key >> (level * BITS)) & MASK
-            init = reducer(init, level, ix)
+            acc = reducer(acc, level, ix)
 
-        return init
+        return acc
 
-    def at(self, key: int) -> T:
+    def _at(self, key: int) -> T:
         """Returns an element located at index `key`.
         """
         leaf_ix = key & MASK
@@ -97,14 +120,20 @@ class Vector:
         def reducer(node: Node[T], level: int, ix: int) -> Node[T]:
             return node.children[ix]
 
-        leaf = self.reduce_node(key, reducer, self.root)
+        leaf = self._reduce_node(key, reducer, self.root)
         val = leaf.children[leaf_ix]
         # Save the leaf node for later use.
         self.leaf = leaf
-        return val
+        return cast(T, val)
+
+    def depth(self) -> int:
+        return 0 if self.length == 0 else math.floor(math.log(self.length, WIDTH))
+
+    def mutate(self) -> None:
+        self.mutation = not self.mutation
 
     def append(self, val: T) -> "Vector":
-        """Three cases when appending, in order initial possibility:
+        """There's 3 cases when appending, in order initial possibility:
          1. Root overflow: there's no more space in the entire tree: thus we must
          create an entirely new root, whereof's left branch is the current root.
 
@@ -115,32 +144,33 @@ class Vector:
          path copying on the way down.
         """
         root = Node(list(self.root.children)) if not self.mutation else self.root
-        size = self.size + 1
-        key = self.size
+        length = self.length + 1
+        key = self.length
         leaf_ix = key & MASK
 
-        # Root overflow case.
-        if is_power_of(self.size, WIDTH):
+        # Case 1.
+        if is_power_of(self.length, WIDTH):
             root = Node([root])
 
         def reducer(node: Node[T], level: int, ix: int) -> Node[T]:
-            if node.children[ix] is None:
+            # Case 2.
+            children = node.children[ix]
+
+            if children is None:
                 node.children[ix] = Node()
             else:
-                # Path copying.
-                node.children[ix] = (
-                    node.children[ix].copy() if not self.mutation else node.children[ix]
-                )
+                node.children[ix] = children.copy() if not self.mutation else children
             return node.children[ix]
 
-        leaf = self.reduce_node(key, reducer, root)
+        leaf = self._reduce_node(key, reducer, root)
+        # Case 3.
         leaf.children[leaf_ix] = val
 
         if not self.mutation:
-            return self.__create(root, size)
+            return self._create(root, length)
         else:
             self.root = root
-            self.size = size
+            self.length = length
             return self
 
     def pop(self) -> "Vector":
@@ -149,23 +179,22 @@ class Vector:
 
         2. The right-most leaf node is all "None"s after popping: we set this entire node to None.
 
-        3. The current size is a power of WIDTH, therefore an entire branch needs trimming:
+        3. The current length is a power of WIDTH, therefore an entire branch needs trimming:
         we set the parent node, or previous leaf, equal to the left-most, or zeroth, child leaf.
         
-        3a. If the size == WIDTH, we must set the root element equal to the left-most child, or prev_leaf.
+        3a. If the length == WIDTH, we must set the root element equal to the left-most child, or prev_leaf.
             Denoted as an "a" case as reference semantics, not logic, force this special case.
         """
         root = Node(list(self.root.children)) if not self.mutation else self.root
-        size = self.size - 1
-        key = self.size - 1
+        length = self.length - 1
+        key = self.length - 1
         leaf_ix = key & MASK
 
         def reducer(nodes: Tuple[Node[T], Node[T]], level: int, ix: int):
             prev_node, node = nodes
+            children = node.children[ix]
 
-            node.children[ix] = (
-                node.children[ix].copy() if not self.mutation else node.children[ix]
-            )
+            node.children[ix] = children.copy() if not self.mutation else children
 
             # Case 2.
             # If we're at the last level and our index to pop is the zeroth one
@@ -177,25 +206,25 @@ class Vector:
             else:
                 return node, node.children[ix]
 
-        prev_leaf, leaf = self.reduce_node(key, reducer, (root, root))
+        prev_leaf, leaf = self._reduce_node(key, reducer, (root, root))
 
         # Case 1.
         if leaf is not None:
             leaf.children[leaf_ix] = None
 
         # Case 3.
-        if is_power_of(self.size, WIDTH):
+        if is_power_of(self.length, WIDTH):
             prev_leaf = prev_leaf.children[0]
 
         # Case 3a.
-        if self.size == WIDTH:
+        if self.length == WIDTH:
             root = prev_leaf
 
         if not self.mutation:
-            return self.__create(root, size)
+            return self._create(root, length)
         else:
             self.root = root
-            self.size = size
+            self.length = length
             return self
 
     def copy(self) -> "Vector":
@@ -203,14 +232,14 @@ class Vector:
         return out.pop()
 
     def concat(self, *args: "Vector") -> "Vector":
-        lists = list(args)
+        lists: List["Vector"] = list(args)
         base = self.copy() if not self.mutation else self
         mutation = self.mutation
 
         base.mutation = True
         for sub_list in lists:
-            for j in range(sub_list.size):
-                base.append(sub_list.at(j))
+            sub_list.for_each(lambda x, i: base.append(x))
+
         base.mutation = mutation
 
         return base
@@ -222,38 +251,26 @@ class Vector:
         """
         out_list: List[T] = []
 
-        for i in range(start):
-            out_list.append(self.at(i))
-
+        self.for_each(lambda x, i: out_list.append(x), 0, start)
         out_list += vals
-
-        for i in range(start, self.size):
-            out_list.append(self.at(i))
+        self.for_each(lambda x, i: out_list.append(x), start)
 
         return Vector(out_list)
 
     def slice(self, start: Optional[int] = None, end: Optional[int] = None) -> "Vector":
         """Slice the list into a section starting at `start` and ending at `end`.
         If start is None, return a copy.
-        If end is None, end = self.size + 1.
-        If end is < 0, end's value wraps around; end += self.size.
+        If end is None, end = self.length + 1.
+        If end is < 0, end's value wraps around; end += self.length.
         """
         if start is None:
             return self.copy()
         else:
-            out_list: List[T] = []
-            if end is None:
-                end = self.size + 1
-            elif end < 0:
-                end += self.size
-
-            for i in range(start, end):
-                out_list.append(self.at(i))
-
-            return Vector(out_list)
+            out = self.copy()
+            return out[start:end]
 
     def for_each(
-        self, func: Callable[[T, int], None], start: int = 0, end: Optional[int] = None,
+        self, func: Callable[[T, int], Any], start: int = 0, end: Optional[int] = None,
     ) -> None:
         """Optimized iteration over the list: we save the leaf node value to reuse as long
         as we can, or until the current index & MASK == 0. Asymptotically equivalent to the
@@ -264,17 +281,17 @@ class Vector:
             the current value,
             the current index?.
             start (int): starting position, defaults to 0.
-            end (Optional[int]): ending position, defaults to self.size. If end < 0, end += self.size.
+            end (Optional[int]): ending position, defaults to self.length. If end < 0, end += self.length.
 
         """
         self.leaf = None
-        end = self.size if end is None else end + self.size if end < 0 else end
+        end = self.length if end is None else end + self.length if end < 0 else end
 
         for i in range(start, end):
             leaf_ix = i & MASK
 
             if leaf_ix == 0 or self.leaf is None:
-                curr_val: T = self.at(i)
+                curr_val: T = self._at(i)
                 func(curr_val, i)
             else:
                 curr_val = self.leaf.children[leaf_ix]
@@ -285,7 +302,7 @@ class Vector:
 
         if init is None:
             start = 1
-            init = self.at(0)
+            init = self._at(0)
 
         acc: S = cast(S, init)
 
@@ -297,52 +314,3 @@ class Vector:
 
         return acc
 
-
-if __name__ == "__main__":
-    l = [0, 1, 2, 3, 4, 5]
-    print(l[1:-1])
-    l0 = Vector(l)
-    l1 = l0.splice(1, [99])
-
-    s = l1.reduce(lambda x, y: x + y)
-    print(s)
-    # l0 = Vector(list(range(5)))
-    # l1 = Vector(list(range(18, 18 * 2)))
-
-    # l3 = l0.splice(1, [99])
-
-    # for i in range(l3.size):
-    #     print(l3.at(i))
-
-    # l1 = l0.pop()
-    # l2 = l0.pop()
-
-    # for i in range(l1.size):
-    #     t1, child1 = l1.at(i)
-    #     t2, child2 = l2.at(i)
-
-    #     print(t1, id(child1) == id(child2))
-
-    # print("o")
-
-
-# def tmp(x, y, z):
-#     print(x, y)``
-#     return x, y
-
-# data = {"vulns": {"hi": 0}, "row": "row"}
-# row = Maybe(data.get("row"))
-# vulns = Maybe(data.get("vulns"))
-# tt = Maybe("ok")
-# t = 1 + 2 + 3 * 1
-
-# a = row.map(lambda row: (vulns.map(lambda vulns: vulns)))
-# b = Promise(None)
-
-# def tmp2(x):
-#     raise ValueError()
-
-# b.then(lambda x: tmp2(x)).catch(lambda: print("umm"))
-
-# m = Maybe(99)
-# m | (lambda x: x + 99)
