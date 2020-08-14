@@ -37,6 +37,10 @@ class Node(Generic[T]):
         return Node(list(self.children))
 
 
+def get_tree_depth(length: int) -> int:
+    return 0 if length == 0 else math.floor(math.log(length, WIDTH))
+
+
 class Vector(Sequence[T]):
     def __init__(self, vals: List[T]):
         self.root: Node[T] = Node()
@@ -46,6 +50,7 @@ class Vector(Sequence[T]):
         self.mutate()
         for val in vals:
             self.append(val)
+            print(self.length)
         self.mutate()
 
     def __len__(self) -> int:
@@ -79,12 +84,9 @@ class Vector(Sequence[T]):
         out.length = length
         return out
 
+    @staticmethod
     def _reduce_node(
-        self,
-        key: int,
-        reducer: Callable[[S, int, int], S],
-        init: S,
-        depth: Optional[int] = None,
+        key: int, reducer: Callable[[S, int, int], S], init: S, depth: int,
     ) -> S:
         """Low-level list reduction API.
 
@@ -101,8 +103,6 @@ class Vector(Sequence[T]):
         Returns:
             S: the reduced value.
         """
-        depth = self.depth() if depth is None else depth
-
         acc = init
 
         for level in range(depth, 0, -1):
@@ -125,12 +125,9 @@ class Vector(Sequence[T]):
         def reducer(node: Node[T], level: int, ix: int) -> Node[T]:
             return node.children[ix]
 
-        leaf = self._reduce_node(key, reducer, self.root)
+        leaf = self._reduce_node(key, reducer, self.root, get_tree_depth(self.length))
 
         return func(leaf_ix, leaf)
-
-    def depth(self) -> int:
-        return 0 if self.length == 0 else math.floor(math.log(self.length, WIDTH))
 
     def mutate(self) -> None:
         self.mutation = not self.mutation
@@ -146,13 +143,13 @@ class Vector(Sequence[T]):
          3. There's space in the current branch: we simply insert "value" here,
          path copying on the way down.
         """
-        root = Node(list(self.root.children)) if not self.mutation else self.root
+        root = self.root.copy() if not self.mutation else self.root
         length = self.length + 1
         key = self.length
         leaf_ix = key & MASK
 
         # Case 1.
-        if is_power_of(self.length, WIDTH):
+        if is_power_of(length, WIDTH):
             root = Node([root])
 
         def reducer(node: Node[T], level: int, ix: int) -> Node[T]:
@@ -165,7 +162,7 @@ class Vector(Sequence[T]):
                 node.children[ix] = children.copy() if not self.mutation else children
             return node.children[ix]
 
-        leaf = self._reduce_node(key, reducer, root)
+        leaf = self._reduce_node(key, reducer, root, get_tree_depth(length))
         # Case 3.
         leaf.children[leaf_ix] = val
 
@@ -177,21 +174,22 @@ class Vector(Sequence[T]):
             return self
 
     def pop(self) -> "Vector[T]":
-        """There's 3.5 cases when popping, in order of initial possibility:
-        1. The right-most leaf node has at least one element in it: we simply set it to None.
+        """There's 3 cases when popping, in order of initial possibility:
+        1. Root underflow: the current length is a power of WIDTH, meaning our last call to 
+        `append` created a dead branch: we trim this off at the root and continue to case 3.
 
         2. The right-most leaf node is all "None"s after popping: we set this entire node to None.
 
-        3. The current length is a power of WIDTH, therefore an entire branch needs trimming:
-        we set the parent node, or previous leaf, equal to the left-most, or zeroth, child leaf.
-        
-        3a. If the length == WIDTH, we must set the root element equal to the left-most child, or prev_leaf.
-            Denoted as an "a" case as reference semantics, not logic, force this special case.
+        3. The right-most leaf node has at least one element in it: we simply set it to None.
         """
-        root = Node(list(self.root.children)) if not self.mutation else self.root
+        root = self.root.copy() if not self.mutation else self.root
         length = self.length - 1
         key = self.length - 1
         leaf_ix = key & MASK
+
+        # Case 1.
+        if is_power_of(self.length, WIDTH):
+            root = root.children[0]
 
         def reducer(nodes: Tuple[Node[T], Node[T]], level: int, ix: int):
             prev_node, node = nodes
@@ -200,28 +198,19 @@ class Vector(Sequence[T]):
             node.children[ix] = children.copy() if not self.mutation else children
 
             # Case 2.
-            # If we're at the last level and our index to pop is the zeroth one
-            # we delete the entire branch. This is easier to detect inside the
-            # reduction.
             if level == 1 and leaf_ix == 0:
                 node.children[ix] = None
                 return node, None
             else:
                 return node, node.children[ix]
 
-        prev_leaf, leaf = self._reduce_node(key, reducer, (root, root))
-
-        # Case 1.
-        if leaf is not None:
-            leaf.children[leaf_ix] = None
+        prev_leaf, leaf = self._reduce_node(
+            key, reducer, (root, root), get_tree_depth(length)
+        )
 
         # Case 3.
-        if is_power_of(self.length, WIDTH):
-            prev_leaf = prev_leaf.children[0]
-
-        # Case 3a.
-        if self.length == WIDTH:
-            root = prev_leaf
+        if leaf is not None:
+            leaf.children[leaf_ix] = None
 
         if not self.mutation:
             return self._create(root, length)

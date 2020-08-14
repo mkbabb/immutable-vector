@@ -36,7 +36,10 @@ class TestVector(unittest.TestCase):
 
 if __name__ == "__main__":
     # unittest.main()
+    n = WIDTH ** 2
+    v0 = Vector[int]([i for i in range(n)])
+    v1 = v0.copy()
 
-    v0 = Vector[int]([i for i in range(WIDTH * WIDTH)])
-    print(v0.join(", "))
+    for i in range(n):
+        v1 = v1.pop()
 
