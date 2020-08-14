@@ -37,12 +37,11 @@ class Node(Generic[T]):
         return Node(list(self.children))
 
 
-class Vector(Sequence[Optional[T]]):
+class Vector(Sequence[T]):
     def __init__(self, vals: List[T]):
         self.root: Node[T] = Node()
         self.length = 0
         self.mutation = False
-        self.leaf: Optional[Node[T]] = None
 
         self.mutate()
         for val in vals:
@@ -66,7 +65,7 @@ class Vector(Sequence[Optional[T]]):
             return Vector([self[i] for i in range(start, stop, step)])
         elif isinstance(key, int):
             key = key + self.length if key < 0 else key
-            if key > self.length - 1:
+            if key > self.length:
                 raise IndexError
             else:
                 return self._at(key)
@@ -112,19 +111,23 @@ class Vector(Sequence[Optional[T]]):
 
         return acc
 
-    def _at(self, key: int) -> T:
+    def _at(self, key: int, func: Optional[Callable[[int, Node[T]], S]] = None) -> S:
         """Returns an element located at index `key`.
+        Takes an optional callback func that must return a leaf node value.
         """
         leaf_ix = key & MASK
+        func = (
+            func
+            if func is not None
+            else lambda leaf_ix, leaf: cast(S, leaf.children[leaf_ix])
+        )
 
         def reducer(node: Node[T], level: int, ix: int) -> Node[T]:
             return node.children[ix]
 
         leaf = self._reduce_node(key, reducer, self.root)
-        val = leaf.children[leaf_ix]
-        # Save the leaf node for later use.
-        self.leaf = leaf
-        return cast(T, val)
+
+        return func(leaf_ix, leaf)
 
     def depth(self) -> int:
         return 0 if self.length == 0 else math.floor(math.log(self.length, WIDTH))
@@ -173,7 +176,7 @@ class Vector(Sequence[Optional[T]]):
             self.length = length
             return self
 
-    def pop(self) -> "Vector":
+    def pop(self) -> "Vector[T]":
         """There's 3.5 cases when popping, in order of initial possibility:
         1. The right-most leaf node has at least one element in it: we simply set it to None.
 
@@ -227,19 +230,18 @@ class Vector(Sequence[Optional[T]]):
             self.length = length
             return self
 
-    def copy(self) -> "Vector":
+    def copy(self) -> "Vector[T]":
         out = self.append(None)
         return out.pop()
 
-    def concat(self, *args: "Vector") -> "Vector":
+    def concat(self, *args: "Vector[T]") -> "Vector[T]":
         lists: List["Vector"] = list(args)
         base = self.copy() if not self.mutation else self
         mutation = self.mutation
 
         base.mutation = True
         for sub_list in lists:
-            sub_list.for_each(lambda x, i: base.append(x))
-
+            sub_list.for_each(lambda curr_val, i: base.append(curr_val))
         base.mutation = mutation
 
         return base
@@ -249,11 +251,12 @@ class Vector(Sequence[Optional[T]]):
         then insert all values in `vals` into the middle. Finally,
         rejoin the three lists into one and return.
         """
-        out_list: List[T] = []
 
-        self.for_each(lambda x, i: out_list.append(x), 0, start)
-        out_list += vals
-        self.for_each(lambda x, i: out_list.append(x), start)
+        out_list = self.reduce(lambda acc, curr_val: acc.append(curr_val), [])
+
+        # self.for_each(lambda x, i: out_list.append(x), 0, start)
+        # out_list += vals
+        # self.for_each(lambda x, i: out_list.append(x), start)
 
         return Vector(out_list)
 
@@ -284,33 +287,62 @@ class Vector(Sequence[Optional[T]]):
             end (Optional[int]): ending position, defaults to self.length. If end < 0, end += self.length.
 
         """
-        self.leaf = None
         end = self.length if end is None else end + self.length if end < 0 else end
+        saved_leaf = None
+
+        def at_func(leaf_ix: int, leaf: Node[T]) -> Node[T]:
+            return leaf
 
         for i in range(start, end):
             leaf_ix = i & MASK
 
-            if leaf_ix == 0 or self.leaf is None:
-                curr_val: T = self._at(i)
-                func(curr_val, i)
-            else:
-                curr_val = self.leaf.children[leaf_ix]
-                func(curr_val, i)
+            if leaf_ix == 0 or saved_leaf is None:
+                saved_leaf = self._at(i, at_func)
 
-    def reduce(self, func: Callable[[S, T], S], init: Optional[T] = None) -> S:
-        start = 0
+            curr_val = cast(T, saved_leaf.children[leaf_ix])
+            func(curr_val, i)
 
+    @overload
+    def reduce(
+        self,
+        func: Callable[[S, T, int], S],
+        init: S,
+        start: int = 0,
+        end: Optional[int] = None,
+    ) -> S:
+        pass
+
+    @overload
+    def reduce(
+        self, func: Callable[[T, T, int], T], start: int = 0, end: Optional[int] = None
+    ) -> T:
+        pass
+
+    def reduce(
+        self,
+        func: Any,
+        init: Optional[Any] = None,
+        start: int = 0,
+        end: Optional[int] = None,
+    ) -> Any:
         if init is None:
             start = 1
-            init = self._at(0)
+            init = self[0]
 
-        acc: S = cast(S, init)
+        acc = init
 
         def _func(curr_val: T, i: int) -> None:
             nonlocal acc
-            acc = func(acc, curr_val)
+            acc = func(acc, curr_val, i)
 
-        self.for_each(_func, start)
+        self.for_each(_func, start, end)
 
         return acc
+
+    def join(self, separator: str = ",") -> str:
+        return (
+            self.reduce(lambda s, curr_val, i: f"{s}{separator}{curr_val}")
+            if len(self) > 0
+            else ""
+        )
 

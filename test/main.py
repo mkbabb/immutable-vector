@@ -1,31 +1,42 @@
-from immutable_vector import Vector
+from immutable_vector import Vector, WIDTH, Node
+from typing import *
+
+
+import unittest
+
+
+class TestVector(unittest.TestCase):
+    def test_append_case_1(self) -> None:
+        v0 = Vector[int]([i for i in range(WIDTH)])
+        v1 = v0.append(WIDTH)
+
+        self.assertTrue(v1.length == WIDTH + 1)
+        # self.assertTrue(isinstance(v1.root.children[0], Node))
+        # self.assertTrue(v1.root.children[1][0] == WIDTH)
+
+    def test_append_case_2(self) -> None:
+        v0 = Vector[int]([i for i in range(WIDTH * WIDTH)])
+        v1 = v0.append(WIDTH * WIDTH + 1)
+
+        self.assertTrue(v1.length == WIDTH * WIDTH + 1)
+        # self.assertTrue(isinstance(v1.root.children[0][0], Node))
+
+    def test_append_case_3(self) -> None:
+        v0 = Vector[int]([])
+        v1 = v0.copy()
+
+        v1.mutate()
+        for i in range(WIDTH):
+            v1.append(i)
+            self.assertFalse(v0.root == v1.root)
+            self.assertTrue(v1.root.children[i] == i)
+
+        self.assertTrue(v1.length == WIDTH)
 
 
 if __name__ == "__main__":
-    items = [0, 1, 2, 3, 4, 5]
+    # unittest.main()
 
-    v0 = Vector(items)
-    v1 = v0.splice(1, [99])
+    v0 = Vector[int]([i for i in range(WIDTH * WIDTH)])
+    print(v0.join(", "))
 
-    total = v1.reduce(lambda x, y: x + y)
-
-    # l0 = Vector(list(range(5)))
-    # l1 = Vector(list(range(18, 18 * 2)))
-
-    # l3 = l0.splice(1, [99])
-
-    # for i in range(l3.size):
-    #     print(l3.at(i))
-
-    # l1 = l0.pop()
-    # l2 = l0.pop()
-
-    # for i in range(l1.size):
-    #     t1, child1 = l1.at(i)
-    #     t2, child2 = l2.at(i)
-
-    #     print(t1, id(child1) == id(child2))
-
-    # print("o")
-
-_at
