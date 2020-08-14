@@ -50,7 +50,6 @@ class Vector(Sequence[T]):
         self.mutate()
         for val in vals:
             self.append(val)
-            print(self.length)
         self.mutate()
 
     def __len__(self) -> int:
