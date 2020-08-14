@@ -1,8 +1,7 @@
-from immutable_vector import Vector, WIDTH, Node
+import unittest
 from typing import *
 
-
-import unittest
+from immutable_vector import WIDTH, Node, Vector
 
 
 class TestVector(unittest.TestCase):
@@ -27,4 +26,3 @@ class TestVector(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
