@@ -8,17 +8,12 @@ Based off of the wonderful work by Rich Hickey (`Clojure`'s Vector) and Phil Bag
 
 ## Quick Start
 
-If using poetry (_preferred method_), you can simply:
+This project uses `poetry`. No production dependencies are required, but if you're
+looking to clone and develop, get the development dependencies like so:
 
     poetry install
 
-to install the dependencies.
-
-Or if you're using pip:
-
-    pip install -r requirements.txt
-
-Then, just `import` like so
+Then, we `import`:
 
 ```python
 from immutable_vector import Vector
@@ -41,14 +36,14 @@ spec [here](https://www.ecma-international.org/ecma-262/5.1/#sec-15.4) and a gre
 article here
 [here](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array#instance_methods)
 
-#### (soon to be) ⚡️Fast
+#### (*soon to be) ⚡️Fast
 
 Utilizes a
 [hash array mapped trie](https://en.wikipedia.org/wiki/Hash_array_mapped_trie) data
 structure for competitive performance when compared to a typical contiguous array
 implementation.
 
-_soon to be_ qualifier, as a future goal is to provide Python bindings to a
+_*soon to be_ qualifier, as a future goal is to provide Python bindings to a
 re-implemented C API hereof.
 
 ## Technical Details
